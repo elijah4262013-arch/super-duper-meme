@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Weather Radar - Reflectivity, Velocity & OpenMeteo</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            padding: 15px 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            color: #fff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .header-subtitle {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .container {
+            display: flex;
+            height: calc(100vh - 100px);
+        }
+
+        .sidebar {
+            width: 300px;
+            background: rgba(30, 40, 60, 0.95);
+            padding: 20px;
+            border-right: 2px solid #2a5298;
+            overflow-y: auto;
+        }
+
+        .main-content {
+            flex: 1;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            background: #0a0e27;
+        }
+
+        .control-panel {
+            background: rgba(20, 25, 40, 0.9);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #2a5298;
+        }
+
+        .control-panel h2 {
+            color: #4da6ff;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            border-bottom: 2px solid #2a5298;
+            padding-bottom: 10px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #b8c7e0;
+        }
+
+        .control-group select,
+        .control-group input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #2a5298;
+            background: rgba(10, 15, 30, 0.7);
+            color: #e0e0e0;
+            font-size: 1rem;
+        }
+
+        .control-group select:focus,
+        .control-group input:focus {
+            outline: none;
+            border-color: #4da6ff;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 5px;
+        }
+
+        .btn:hover {
+            background: linear-gradient(135deg, #2a5298 0%, #3a6ab8 100%);
+            transform: translateY(-2px);
+        }
+
+        .btn.active {
+            background: linear-gradient(135deg, #4da6ff 0%, #6db8ff 100%);
+            box-shadow: 0 0 15px rgba(77, 166, 255, 0.5);
+        }
+
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .mode-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .legend {
+            background: rgba(20, 25, 40, 0.9);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+            border: 1px solid #2a5298;
+        }
+
+        .legend h3 {
+            color: #4da6ff;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        .legend-scale {
+            height: 200px;
+            width: 100%;
+            background: linear-gradient(to top, 
+                #0000ff, #0080ff, #00ffff, #80ffff, 
+                #ffffff, #ffff80, #ff8000, #ff0000, #800000);
+            border-radius: 5px;
+            position: relative;
+            margin-bottom: 10px;
+        }
+
+        .legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+        }
+
+        .status {
+            background: rgba(20, 25, 40, 0.9);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+            border: 1px solid #2a5298;
+        }
+
+        .status h3 {
+            color: #4da6ff;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(77, 166, 255, 0.2);
+            font-size: 0.85rem;
+        }
+
+        .status-item:last-child {
+            border-bottom: none;
+        }
+
+        .status-value {
+            color: #80ff80;
+            font-weight: 600;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px 30px;
+            border-radius: 10px;
+            color: #4da6ff;
+            font-size: 1.2rem;
+            z-index: 1000;
+        }
+
+        .radar-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(20, 25, 40, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #2a5298;
+            z-index: 1000;
+            max-width: 400px;
+        }
+
+        .radar-info h3 {
+            color: #4da6ff;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        .radar-info p {
+            margin: 5px 0;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                flex-direction: column;
+                height: auto;
+            }
+
+            .sidebar {
+                width: 100%;
+                height: auto;
+                border-right: none;
+                border-bottom: 2px solid #2a5298;
+            }
+
+            #map {
+                height: 500px;
+            }
+
+            .mode-buttons {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>⚡ Weather Radar Pro</h1>
+            <div class="header-subtitle">Reflectivity • Velocity • OpenMeteo</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="control-panel">
+                <h2>⚡ Radar Mode</h2>
+                <div class="mode-buttons">
+                    <button class="btn active" onclick="setMode('reflectivity')" id="btn-reflectivity">
+                        🌧️ Reflectivity
+                    </button>
+                    <button class="btn" onclick="setMode('velocity')" id="btn-velocity">
+                        💨 Velocity
+                    </button>
+                    <button class="btn" onclick="setMode('openmeteo')" id="btn-openmeteo">
+                        🌍 OpenMeteo
+                    </button>
+                    <button class="btn" onclick="setMode('composite')" id="btn-composite">
+                        🎯 Composite
+                    </button>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h2>⚙️ Settings</h2>
+                <div class="control-group">
+                    <label for="opacity">Opacity:</label>
+                    <input type="range" id="opacity" min="10" max="100" value="70" oninput="updateOpacity(this.value)">
+                </div>
+                <div class="control-group">
+                    <label for="animation">Animation Speed:</label>
+                    <input type="range" id="animation" min="1" max="10" value="5" oninput="updateAnimationSpeed(this.value)">
+                </div>
+                <div class="control-group">
+                    <label for="location">Location:</label>
+                    <select id="location" onchange="changeLocation(this.value)">
+                        <option value="us">United States</option>
+                        <option value="europe">Europe</option>
+                        <option value="custom">Custom Coordinates</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="locateMe()">
+                    📍 Locate Me
+                </button>
+            </div>
+
+            <div class="legend" id="legend">
+                <h3>Legend</h3>
+                <div class="legend-scale" id="legend-scale"></div>
+                <div class="legend-labels">
+                    <span>Light</span>
+                    <span>Heavy</span>
+                </div>
+                <div style="margin-top: 10px; font-size: 0.8rem;">
+                    <div id="legend-title">Reflectivity (dBZ)</div>
+                </div>
+            </div>
+
+            <div class="status">
+                <h3>📊 Status</h3>
+                <div class="status-item">
+                    <span>Mode:</span>
+                    <span class="status-value" id="status-mode">Reflectivity</span>
+                </div>
+                <div class="status-item">
+                    <span>Frame:</span>
+                    <span class="status-value" id="status-frame">0</span>
+                </div>
+                <div class="status-item">
+                    <span>Zoom:</span>
+                    <span class="status-value" id="status-zoom">2</span>
+                </div>
+                <div class="status-item">
+                    <span>Lat/Lng:</span>
+                    <span class="status-value" id="status-coords">0, 0</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div id="map"></div>
+            <div class="loading" id="loading">Loading Radar Data...</div>
+            <div class="radar-info" id="radar-info">
+                <h3>📡 Radar Information</h3>
+                <p id="radar-name">Select a location</p>
+                <p id="radar-time">Time: --:-- UTC</p>
+                <p id="radar-range">Range: 250 km</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Configuration
+        const CONFIG = {
+            reflectivity: {
+                name: 'Reflectivity',
+                unit: 'dBZ',
+                colors: [
+                    { value: 5, color: '#000000' },
+                    { value: 10, color: '#000080' },
+                    { value: 20, color: '#0000ff' },
+                    { value: 30, color: '#0080ff' },
+                    { value: 40, color: '#00ffff' },
+                    { value: 45, color: '#80ffff' },
+                    { value: 50, color: '#ffffff' },
+                    { value: 55, color: '#ffff80' },
+                    { value: 60, color: '#ff8000' },
+                    { value: 65, color: '#ff0000' },
+                    { value: 70, color: '#800000' },
+                    { value: 75, color: '#ff00ff' }
+                ],
+                legendTitle: 'Reflectivity (dBZ)'
+            },
+            velocity: {
+                name: 'Velocity',
+                unit: 'm/s',
+                colors: [
+                    { value: -50, color: '#000080' },
+                    { value: -30, color: '#0000ff' },
+                    { value: -15, color: '#0080ff' },
+                    { value: -5, color: '#00ffff' },
+                    { value: 0, color: '#808080' },
+                    { value: 5, color: '#ffff00' },
+                    { value: 15, color: '#ff8000' },
+                    { value: 30, color: '#ff0000' },
+                    { value: 50, color: '#800000' }
+                ],
+                legendTitle: 'Doppler Velocity (m/s)'
+            },
+            openmeteo: {
+                name: 'OpenMeteo',
+                unit: 'mm/h',
+                colors: [
+                    { value: 0, color: '#000000' },
+                    { value: 0.1, color: '#000080' },
+                    { value: 1, color: '#0000ff' },
+                    { value: 5, color: '#0080ff' },
+                    { value: 10, color: '#00ffff' },
+                    { value: 20, color: '#80ffff' },
+                    { value: 30, color: '#ffffff' },
+                    { value: 50, color: '#ffff80' },
+                    { value: 100, color: '#ff8000' },
+                    { value: 200, color: '#ff0000' }
+                ],
+                legendTitle: 'Precipitation (mm/h)'
+            }
+        };
+
+        // Global state
+        let map;
+        let currentMode = 'reflectivity';
+        let opacity = 0.7;
+        let animationSpeed = 5;
+        let currentFrame = 0;
+        let animationInterval;
+        let radarLayers = {};
+        let userMarker = null;
+        let isLocating = false;
+
+        // Radar data simulation
+        const radarData = {
+            us: {
+                center: [39.8283, -98.5795],
+                zoom: 4,
+                range: 250,
+                name: 'US National Radar'
+            },
+            europe: {
+                center: [48.8566, 12.3522],
+                zoom: 4,
+                range: 250,
+                name: 'European Radar'
+            },
+            custom: {
+                center: [0, 0],
+                zoom: 2,
+                range: 250,
+                name: 'Custom Location'
+            }
+        };
+
+        // Initialize the map
+        function initMap() {
+            map = L.map('map', {
+                center: radarData.us.center,
+                zoom: radarData.us.zoom,
+                minZoom: 2,
+                maxZoom: 18,
+                worldCopyJump: true
+            });
+
+            // Add base layers
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Add satellite layer as optional
+            const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles © Esri',
+                maxZoom: 17
+            });
+
+            // Add dark matter layer
+            const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '© OpenStreetMap © CartoDB',
+                maxZoom: 19
+            });
+
+            // Layer control
+            const baseLayers = {
+                'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors',
+                    maxZoom: 19
+                }),
+                'Satellite': satelliteLayer,
+                'Dark Matter': darkLayer
+            };
+
+            L.control.layers(baseLayers).addTo(map);
+
+            // Initialize radar layers
+            initRadarLayers();
+
+            // Map event listeners
+            map.on('zoomend', function() {
+                document.getElementById('status-zoom').textContent = map.getZoom();
+                updateRadarLayers();
+            });
+
+            map.on('moveend', function() {
+                const center = map.getCenter();
+                document.getElementById('status-coords').textContent = 
+                    `${center.lat.toFixed(2)}, ${center.lng.toFixed(2)}`;
+            });
+
+            // Hide loading after map is ready
+            setTimeout(() => {
+                document.getElementById('loading').style.display = 'none';
+            }, 1000);
+
+            // Start animation
+            startAnimation();
+        }
+
+        // Initialize radar layers
+        function initRadarLayers() {
+            // Create canvas overlay for each mode
+            for (const mode of ['reflectivity', 'velocity', 'openmeteo', 'composite']) {
+                radarLayers[mode] = L.layerGroup().addTo(map);
+            }
+            
+            updateRadarLayers();
+        }
+
+        // Update radar layers based on current view
+        function updateRadarLayers() {
+            const bounds = map.getBounds();
+            const zoom = map.getZoom();
+            const center = map.getCenter();
+
+            // Clear existing layers
+            for (const mode in radarLayers) {
+                radarLayers[mode].clearLayers();
+            }
+
+            // Calculate grid size based on zoom level
+            const gridSize = Math.max(5, 20 - zoom * 2);
+            const cellSize = 0.05 * (18 - zoom);
+
+            // Generate simulated radar data points
+            generateRadarData(bounds, cellSize, center);
+        }
+
+        // Generate simulated radar data
+        function generateRadarData(bounds, cellSize, center) {
+            const southWest = bounds.getSouthWest();
+            const northEast = bounds.getNorthEast();
+
+            const currentConfig = CONFIG[currentMode];
+
+            // Create a grid of points
+            for (let lat = southWest.lat; lat <= northEast.lat; lat += cellSize) {
+                for (let lng = southWest.lng; lng <= northEast.lng; lng += cellSize) {
+                    // Calculate distance from center
+                    const distance = calculateDistance(
+                        center.lat, center.lng, lat, lng
+                    );
+
+                    // Only create points within radar range (250km)
+                    if (distance > 250) continue;
+
+                    // Generate simulated radar value based on mode
+                    const value = generateRadarValue(lat, lng, center, currentMode);
+
+                    if (value !== null) {
+                        // Get color for this value
+                        const color = getColorForValue(value, currentConfig.colors);
+                        
+                        if (color) {
+                            // Create a circle marker
+                            const radius = Math.max(1, (18 - map.getZoom()) * 0.5);
+                            const circle = L.circleMarker([lat, lng], {
+                                radius: radius,
+                                fillColor: color,
+                                color: color,
+                                weight: 0,
+                                fillOpacity: opacity,
+                                opacity: opacity
+                            });
+
+                            // Add to the current mode layer
+                            radarLayers[currentMode].addLayer(circle);
+
+                            // For composite mode, add all modes
+                            if (currentMode === 'composite') {
+                                for (const mode of ['reflectivity', 'velocity', 'openmeteo']) {
+                                    const modeValue = generateRadarValue(lat, lng, center, mode);
+                                    if (modeValue !== null) {
+                                        const modeColor = getColorForValue(modeValue, CONFIG[mode].colors);
+                                        if (modeColor) {
+                                            L.circleMarker([lat, lng], {
+                                                radius: radius * 0.8,
+                                                fillColor: modeColor,
+                                                color: modeColor,
+                                                weight: 0,
+                                                fillOpacity: opacity * 0.5,
+                                                opacity: opacity * 0.5
+                                            }).addTo(radarLayers['composite']);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Update radar info
+            updateRadarInfo(center);
+        }
+
+        // Generate simulated radar value
+        function generateRadarValue(lat, lng, center, mode) {
+            const distance = calculateDistance(center.lat, center.lng, lat, lng);
+
+            // Base noise
+            const noise = Math.sin(lat * 10) * Math.cos(lng * 10) * 0.5;
+
+            // Simulate weather patterns
+            let value = null;
+
+            switch (mode) {
+                case 'reflectivity':
+                    // Simulate precipitation bands
+                    const band1 = Math.exp(-Math.pow(distance - 50, 2) / 2000) * 40;
+                    const band2 = Math.exp(-Math.pow(distance - 100, 2) / 3000) * 50;
+                    const band3 = Math.exp(-Math.pow(distance - 150, 2) / 4000) * 30;
+                    
+                    value = band1 + band2 + band3 + noise * 20;
+                    
+                    // Add some random storms
+                    if (Math.random() > 0.95) {
+                        value += Math.random() * 30;
+                    }
+                    
+                    // Clamp to valid range
+                    value = Math.max(0, Math.min(75, value));
+                    break;
+
+                case 'velocity':
+                    // Simulate wind patterns (Doppler effect)
+                    const angle = Math.atan2(lng - center.lng, lat - center.lat);
+                    const windSpeed = Math.sin(Date.now() / 10000 + distance / 100) * 20;
+                    
+                    value = windSpeed * Math.cos(angle) + noise * 10;
+                    
+                    // Clamp to valid range
+                    value = Math.max(-50, Math.min(50, value));
+                    break;
+
+                case 'openmeteo':
+                    // Simulate precipitation rate
+                    const precipBase = Math.exp(-distance / 100) * 100;
+                    value = precipBase + noise * 50;
+                    
+                    // Add some heavy rain cells
+                    if (Math.random() > 0.9) {
+                        value += Math.random() * 150;
+                    }
+                    
+                    // Clamp to valid range
+                    value = Math.max(0, Math.min(200, value));
+                    break;
+
+                default:
+                    value = 0;
+            }
+
+            return value;
+        }
+
+        // Get color for a value from color scale
+        function getColorForValue(value, colorScale) {
+            // Find the appropriate color
+            for (let i = colorScale.length - 1; i >= 0; i--) {
+                if (value >= colorScale[i].value) {
+                    return colorScale[i].color;
+                }
+            }
+            return colorScale[0].color;
+        }
+
+        // Calculate distance between two coordinates in km
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        // Set radar mode
+        function setMode(mode) {
+            // Remove active class from all buttons
+            document.querySelectorAll('.mode-buttons .btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Add active class to selected button
+            document.getElementById(`btn-${mode}`).classList.add('active');
+
+            // Hide all layers
+            for (const m in radarLayers) {
+                if (map.hasLayer(radarLayers[m])) {
+                    map.removeLayer(radarLayers[m]);
+                }
+            }
+
+            // Show selected layer
+            if (!map.hasLayer(radarLayers[mode])) {
+                map.addLayer(radarLayers[mode]);
+            }
+
+            currentMode = mode;
+            
+            // Update status
+            document.getElementById('status-mode').textContent = CONFIG[mode].name;
+            
+            // Update legend
+            updateLegend(mode);
+
+            // Update radar layers
+            updateRadarLayers();
+        }
+
+        // Update legend
+        function updateLegend(mode) {
+            const config = CONFIG[mode];
+            const legend = document.getElementById('legend');
+            const legendScale = document.getElementById('legend-scale');
+            const legendTitle = document.getElementById('legend-title');
+
+            legendTitle.textContent = config.legendTitle;
+
+            // Create gradient based on color scale
+            let gradient = 'linear-gradient(to top, ';
+            config.colors.forEach((entry, index) => {
+                gradient += `${entry.color} ${index * (100 / (config.colors.length - 1))}%,`;
+            });
+            gradient = gradient.slice(0, -1) + ')';
+            legendScale.style.background = gradient;
+
+            // Update labels
+            const labels = legend.querySelectorAll('.legend-labels span');
+            if (labels.length >= 2) {
+                labels[0].textContent = config.colors[0].value + ' ' + config.unit;
+                labels[1].textContent = config.colors[config.colors.length - 1].value + ' ' + config.unit;
+            }
+        }
+
+        // Update opacity
+        function updateOpacity(value) {
+            opacity = value / 100;
+            updateRadarLayers();
+        }
+
+        // Update animation speed
+        function updateAnimationSpeed(value) {
+            animationSpeed = parseInt(value);
+            restartAnimation();
+        }
+
+        // Start animation
+        function startAnimation() {
+            animationInterval = setInterval(() => {
+                currentFrame++;
+                document.getElementById('status-frame').textContent = currentFrame % 24;
+                updateRadarLayers();
+            }, 1000 / animationSpeed);
+        }
+
+        // Restart animation
+        function restartAnimation() {
+            clearInterval(animationInterval);
+            startAnimation();
+        }
+
+        // Change location
+        function changeLocation(loc) {
+            const data = radarData[loc];
+            if (data) {
+                map.setView(data.center, data.zoom);
+                document.getElementById('radar-name').textContent = data.name;
+                document.getElementById('radar-range').textContent = `Range: ${data.range} km`;
+                updateRadarLayers();
+            }
+        }
+
+        // Locate user
+        function locateMe() {
+            if (isLocating) return;
+
+            isLocating = true;
+            
+            if (navigator.geolocation) {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('loading').textContent = 'Locating...';
+
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+
+                        // Remove user marker if exists
+                        if (userMarker) {
+                            map.removeLayer(userMarker);
+                        }
+
+                        // Add new user marker
+                        userMarker = L.marker([lat, lng], {
+                            icon: L.divIcon({
+                                className: 'user-marker',
+                                html: '📍',
+                                iconSize: [30, 30]
+                            })
+                        }).addTo(map);
+
+                        // Center map on user
+                        map.setView([lat, lng], 10);
+
+                        // Update custom location
+                        radarData.custom.center = [lat, lng];
+                        radarData.custom.zoom = 10;
+                        radarData.custom.name = `User Location (${lat.toFixed(2)}, ${lng.toFixed(2)})`;
+                        
+                        document.getElementById('location').value = 'custom';
+                        document.getElementById('radar-name').textContent = radarData.custom.name;
+
+                        document.getElementById('loading').style.display = 'none';
+                        isLocating = false;
+                        updateRadarLayers();
+                    },
+                    function(error) {
+                        alert('Unable to get your location: ' + error.message);
+                        document.getElementById('loading').style.display = 'none';
+                        isLocating = false;
+                    },
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+            } else {
+                alert('Geolocation is not supported by your browser');
+                isLocating = false;
+            }
+        }
+
+        // Update radar info display
+        function updateRadarInfo(center) {
+            const now = new Date();
+            const hours = now.getUTCHours().toString().padStart(2, '0');
+            const minutes = now.getUTCMinutes().toString().padStart(2, '0');
+            
+            document.getElementById('radar-time').textContent = `Time: ${hours}:${minutes} UTC`;
+            document.getElementById('status-coords').textContent = 
+                `${center.lat.toFixed(2)}, ${center.lng.toFixed(2)}`;
+        }
+
+        // Initialize the app
+        window.onload = function() {
+            initMap();
+            updateLegend('reflectivity');
+            document.getElementById('status-mode').textContent = CONFIG.reflectivity.name;
+        };
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            setTimeout(() => {
+                if (map) {
+                    map.invalidateSize();
+                    updateRadarLayers();
+                }
+            }, 250);
+        });
+
+        // Add keyboard controls
+        document.addEventListener('keydown', function(e) {
+            // Don't interfere with form inputs
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+            switch(e.key) {
+                case '1':
+                    setMode('reflectivity');
+                    break;
+                case '2':
+                    setMode('velocity');
+                    break;
+                case '3':
+                    setMode('openmeteo');
+                    break;
+                case '4':
+                    setMode('composite');
+                    break;
+                case '+':
+                case '=':
+                    map.zoomIn();
+                    break;
+                case '-':
+                case '_':
+                    map.zoomOut();
+                    break;
+                case 'l':
+                case 'L':
+                    locateMe();
+                    break;
+            }
+        });
+
+        // Add help tooltip
+        const helpText = `
+Keyboard Shortcuts:
+------------------
+1 - Reflectivity Mode
+2 - Velocity Mode
+3 - OpenMeteo Mode
+4 - Composite Mode
++ / = - Zoom In
+- / _ - Zoom Out
+L - Locate Me
+`;
+        console.log(helpText);
+    </script>
+</body>
+</html>
